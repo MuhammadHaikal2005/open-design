@@ -8,6 +8,9 @@ import type { RuntimeAgentDef } from '../types.js';
 
 export const byokOpenCodeAgentDef = {
   id: 'byok-opencode',
+  // Real streamed generation resets the watchdog; this bounds genuine silence,
+  // including queueing/prefill before a local model emits its first token.
+  inactivityTimeoutMs: 30 * 60 * 1000,
   name: 'BYOK OpenCode',
   bin: 'opencode-cli',
   fallbackBins: ['opencode'],

@@ -62,6 +62,7 @@ import {
   rewriteWinExecutableVersion,
 } from "./version-resource.js";
 import { buildWinPortableZip } from "./zip.js";
+import { WIN_EXECUTABLE_BRANDING, assertWinExecutableBranding, brandWinExecutable, winBrandingConfig } from "./branding.js";
 import type {
   ElectronBuilderDirCacheMetadata,
   WinBuiltAppManifest,
@@ -71,7 +72,7 @@ import type {
 
 const execFileAsync = promisify(execFile);
 const WIN_ARCHIVE_CACHE_VERSION = 3;
-const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 9;
+const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 10;
 const WIN_NSIS_BASE_PAYLOAD_INPUT_HASH_CACHE_VERSION = 2;
 
 async function hashWinNsisInstallerImplementation(config: ToolPackConfig): Promise<string> {
@@ -176,6 +177,7 @@ async function runElectronBuilderRaw(
       writeWebStandaloneHookConfig(config, paths, projectDir)
     )
     : null;
+  const branding = winBrandingConfig(paths.winIconPath);
   const builderConfig = {
     appId: "io.open-design.desktop",
     afterPack: webStandaloneHookConfigPath == null ? undefined : winResources.webStandaloneAfterPackHook,
@@ -198,6 +200,7 @@ async function runElectronBuilderRaw(
       version: packageVersion,
     },
     extraResources: [
+      ...branding.extraResources,
       { from: paths.resourceRoot, to: "open-design" },
       { from: paths.packagedConfigPath, to: "open-design-config.json" },
       // Vendored dom-to-pptx browser bundle for editable PPTX export (read from
@@ -229,8 +232,8 @@ async function runElectronBuilderRaw(
     productName: PRODUCT_NAME,
     publish: [{ provider: "generic", url: "https://updates.invalid/open-design" }],
     win: {
+      ...branding.win,
       artifactName: `${PRODUCT_NAME}-${namespaceToken}.\${ext}`,
-      icon: paths.winIconPath,
       target: resolveElectronBuilderWinTargets(config.to).map((target) => ({ arch: ["x64"], target })),
     },
   };
@@ -281,10 +284,13 @@ async function runElectronBuilderRaw(
     );
     if (retried) {
       await build("electron-builder-raw:process-retry");
-      return segments;
+    } else {
+      throw error;
     }
-    throw error;
   }
+  await runSegment("electron-builder-raw:brand-executable", async () => {
+    await brandWinExecutable(join(paths.appBuilderOutputRoot, "win-unpacked", `${PRODUCT_NAME}.exe`), paths.winIconPath);
+  });
   return segments;
 }
 
@@ -542,6 +548,7 @@ export async function runElectronBuilder(
   const domToPptxBundle = await hashPath(domToPptxBundleResource(config).from);
   const winIcon = await hashPath(winResources.icon);
   const electronBuilderKeyInput = {
+    branding: WIN_EXECUTABLE_BRANDING,
     afterPackHook,
     cacheVersion: WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION,
     domToPptxBundle,
@@ -585,7 +592,10 @@ export async function runElectronBuilder(
         join(entryRoot, "builder", "win-unpacked"),
       );
       if (validationError != null) return { reason: validationError };
-      try { await assertSidecarRuntime(join(entryRoot, "builder", "win-unpacked")); }
+      try {
+        await assertSidecarRuntime(join(entryRoot, "builder", "win-unpacked"));
+        await assertWinExecutableBranding(join(entryRoot, "builder", "win-unpacked", `${PRODUCT_NAME}.exe`), winResources.icon);
+      }
       catch (error) { return { reason: String(error) }; }
       return null;
     },

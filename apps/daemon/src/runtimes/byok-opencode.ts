@@ -1,8 +1,11 @@
 import type { ByokChatProviderConfig } from '@open-design/contracts';
+import { prepareByokReliabilityPlugin, readByokTokenProfile } from './byok-token-profile.js';
 
 export const BYOK_OPENCODE_AGENT_ID = 'byok-opencode';
 export const BYOK_OPENCODE_PROVIDER_ID = 'open-design-byok';
 export const BYOK_OPENCODE_API_KEY_ENV = 'OPEN_DESIGN_BYOK_API_KEY';
+export const BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV =
+  'OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX';
 export const BYOK_OPENCODE_PROVIDER_REQUIRED_MESSAGE =
   'BYOK OpenCode requires a complete provider configuration for this run.';
 const DEFAULT_CONTEXT_TOKEN_LIMIT = 128_000;
@@ -42,6 +45,7 @@ export function opencodeByokModelId(model: string | null | undefined): string | 
 export function buildOpenCodeByokProviderConfig(
   provider: ByokChatProviderConfig | null | undefined,
   model: string | null | undefined,
+  dataDir?: string,
 ): OpenCodeByokProviderConfig | null {
   if (!provider || typeof provider !== 'object') return null;
   const protocol = provider.protocol;
@@ -64,6 +68,8 @@ export function buildOpenCodeByokProviderConfig(
 
   const modelId = opencodeByokModelId(rawModel);
   if (!modelId) return null;
+  const tokenProfile = readByokTokenProfile(dataDir, rawModel, baseUrl);
+  const outputTokenLimit = tokenProfile?.maxOutput ?? resolveOutputTokenLimit(provider.maxTokens);
 
   const providerEntry = buildProviderEntry(
     protocol,
@@ -86,7 +92,7 @@ export function buildOpenCodeByokProviderConfig(
             modalities: { input: ['text', 'image'], output: ['text'] },
             limit: {
               context: DEFAULT_CONTEXT_TOKEN_LIMIT,
-              output: DEFAULT_OUTPUT_TOKEN_LIMIT,
+              output: outputTokenLimit,
             },
           },
         },
@@ -94,12 +100,47 @@ export function buildOpenCodeByokProviderConfig(
     },
   };
 
+  const configExtras: Record<string, unknown> = {};
+  const envExtras: Record<string, string> = {};
+  if (tokenProfile && dataDir) {
+    if (providerEntry.npm !== '@ai-sdk/openai-compatible') {
+      throw new Error('BYOK token profile requires an OpenAI-compatible chat completions endpoint.');
+    }
+    const models: Record<string, unknown> = config.provider[BYOK_OPENCODE_PROVIDER_ID].models;
+    const mainModel = config.provider[BYOK_OPENCODE_PROVIDER_ID].models[rawModel]!;
+    const summaryModel = `${rawModel}-compaction`;
+    models[rawModel] = { ...mainModel, limit: {
+      context: tokenProfile.context, input: tokenProfile.context - tokenProfile.maxOutput,
+      output: tokenProfile.maxOutput,
+    } };
+    models[summaryModel] = { ...mainModel, id: rawModel, name: `${rawModel} compaction`, limit: {
+      context: tokenProfile.context, input: tokenProfile.context - tokenProfile.summaryOutput,
+      output: tokenProfile.summaryOutput,
+    } };
+    const plugin = prepareByokReliabilityPlugin(dataDir, tokenProfile);
+    configExtras.agent = { compaction: { model: `${BYOK_OPENCODE_PROVIDER_ID}/${summaryModel}` } };
+    configExtras.compaction = { auto: true, prune: true, reserved: tokenProfile.headroom,
+      preserve_recent_tokens: tokenProfile.retainRecent, tail_turns: 2 };
+    configExtras.plugin = [plugin.pluginUrl];
+    envExtras.XDG_CONFIG_HOME = plugin.configHome;
+  }
+
   return {
     providerId: BYOK_OPENCODE_PROVIDER_ID,
     modelId,
-    env: needsApiKey ? { [BYOK_OPENCODE_API_KEY_ENV]: apiKey } : {},
-    config,
+    env: {
+      ...(needsApiKey ? { [BYOK_OPENCODE_API_KEY_ENV]: apiKey } : {}),
+      [BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV]: String(outputTokenLimit),
+      ...envExtras,
+    },
+    config: { ...config, ...configExtras },
   };
+}
+
+function resolveOutputTokenLimit(value: number | undefined): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
+    : DEFAULT_OUTPUT_TOKEN_LIMIT;
 }
 
 function normalizeProviderBaseUrl(

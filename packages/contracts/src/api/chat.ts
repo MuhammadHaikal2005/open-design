@@ -97,6 +97,8 @@ export interface ByokChatProviderConfig {
   apiVersion?: string;
   /** Explicit run-scoped provider policy for presets that do not require bearer credentials. */
   requiresApiKey?: boolean;
+  /** Optional run-scoped maximum response length selected in the chat settings. */
+  maxTokens?: number;
   /**
    * Run-scoped chat model id selected in the chat UI. Forwarded to the daemon
    * so BYOK-backed utilities (e.g. memory extraction) can honor the user's

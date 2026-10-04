@@ -33,6 +33,7 @@ import type {
 } from "@open-design/host";
 
 import { renderDeckSlides } from "./deck-capture.js";
+import { findDesktopIconPath } from "./desktop-icon.js";
 import { renderDeterministicFrames } from "./frame-capture.js";
 import { openFirstPartyMailto } from "./mailto-open.js";
 import { openValidatedDirectory } from "./open-path.js";
@@ -1543,13 +1544,20 @@ export function createSplashWindow(): SplashWindowHandle {
   return { startedAt, window: splash };
 }
 
-function resolveDesktopIconPath(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../web/public/app-icon.png");
+function resolveDesktopIconPath(): string | undefined {
+  return findDesktopIconPath({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    moduleUrl: import.meta.url,
+    platform: process.platform,
+  });
 }
 
 function applyDockIcon(): void {
   if (process.platform !== "darwin" || !app.dock) return;
-  const icon = nativeImage.createFromPath(resolveDesktopIconPath());
+  const iconPath = resolveDesktopIconPath();
+  if (!iconPath) return;
+  const icon = nativeImage.createFromPath(iconPath);
   if (icon.isEmpty()) return;
   app.dock.setIcon(icon);
 }

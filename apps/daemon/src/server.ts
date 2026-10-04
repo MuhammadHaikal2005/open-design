@@ -11069,6 +11069,7 @@ export async function startServer({
       ? buildOpenCodeByokProviderConfig(
           byokProvider,
           typeof model === 'string' ? model : null,
+          RUNTIME_DATA_DIR,
         )
       : null;
     if (def.id === 'byok-opencode' && !byokOpenCodeProvider) {

@@ -1964,6 +1964,7 @@ function byokOpenCodeProviderFromConfig(
     apiKey: config.apiKey.trim(),
     baseUrl: config.baseUrl.trim(),
     model,
+    ...(config.maxTokens == null ? {} : { maxTokens: effectiveMaxTokens(config) }),
     ...(config.apiProtocol === 'azure' && config.apiVersion?.trim()
       ? { apiVersion: config.apiVersion.trim() }
       : {}),

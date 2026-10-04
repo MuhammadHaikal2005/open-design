@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { agentCapabilities } from '../../src/runtimes/capabilities.js';
 import {
   BYOK_OPENCODE_API_KEY_ENV,
+  BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV,
   BYOK_OPENCODE_PROVIDER_ID,
   buildOpenCodeByokProviderConfig,
   opencodeByokModelId,
@@ -76,7 +77,10 @@ describe('byok-opencode runtime config', () => {
     );
 
     expect(out?.modelId).toBe('open-design-byok/deepseek-v4-flash');
-    expect(out?.env).toEqual({ [BYOK_OPENCODE_API_KEY_ENV]: 'sk-secret' });
+    expect(out?.env).toEqual({
+      [BYOK_OPENCODE_API_KEY_ENV]: 'sk-secret',
+      [BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV]: '16384',
+    });
     expect(JSON.stringify(out?.config)).not.toContain('sk-secret');
     expect(out?.config).toMatchObject({
       provider: {
@@ -97,6 +101,37 @@ describe('byok-opencode runtime config', () => {
           },
         },
       },
+    });
+  });
+
+  it('uses the run-scoped BYOK output token limit in the OpenCode model config', () => {
+    const out = buildOpenCodeByokProviderConfig(
+      {
+        protocol: 'openai',
+        apiKey: 'sk-local',
+        baseUrl: 'http://127.0.0.1:8000/v1',
+        model: 'qwen3.8-27b',
+        maxTokens: 65_536,
+      },
+      'qwen3.8-27b',
+    );
+
+    expect(out?.config).toMatchObject({
+      provider: {
+        [BYOK_OPENCODE_PROVIDER_ID]: {
+          models: {
+            'qwen3.8-27b': {
+              limit: {
+                context: 128_000,
+                output: 65_536,
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(out?.env).toMatchObject({
+      [BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV]: '65536',
     });
   });
 
@@ -399,7 +434,9 @@ describe('byok-opencode runtime config', () => {
     );
 
     expect(out?.modelId).toBe('open-design-byok/llama3.2');
-    expect(out?.env).toEqual({});
+    expect(out?.env).toEqual({
+      [BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV]: '16384',
+    });
     expect(out?.config).toMatchObject({
       provider: {
         [BYOK_OPENCODE_PROVIDER_ID]: {
@@ -434,7 +471,9 @@ describe('byok-opencode runtime config', () => {
     );
 
     expect(out?.modelId).toBe('open-design-byok/model');
-    expect(out?.env).toEqual({});
+    expect(out?.env).toEqual({
+      [BYOK_OPENCODE_OUTPUT_TOKEN_MAX_ENV]: '16384',
+    });
     expect(out?.config).toMatchObject({
       provider: {
         [BYOK_OPENCODE_PROVIDER_ID]: {
